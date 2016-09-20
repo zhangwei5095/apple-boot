@@ -1,7 +1,10 @@
 package com.appleframework.boot.core.monitor;
 
-import java.net.URL;
+import java.lang.management.ManagementFactory;
+import java.lang.management.RuntimeMXBean;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
@@ -10,6 +13,8 @@ import org.jgroups.JChannel;
 import org.jgroups.Message;
 
 import com.appleframework.boot.core.Container;
+import com.appleframework.boot.core.log4j.Log4jUtils;
+import com.appleframework.boot.utils.Constants;
 import com.appleframework.boot.utils.HttpUtils;
 import com.appleframework.boot.utils.NetUtils;
 import com.appleframework.boot.utils.SystemPropertiesUtils;
@@ -68,14 +73,8 @@ public class MonitorContainer implements Container {
 	private boolean postMessage() {
 		try {
 			logger.warn("发送监控同步数据通知");
-			Properties prop = SystemPropertiesUtils.getProp();
-			String hostName = NetUtils.getLocalHost();
-			prop.put("node.ip", NetUtils.getIpByHost(hostName));
-			prop.put("node.host", hostName);
-			prop.put("install.path", getInstallPath());
-			if(null != EnvConfigurer.env) {
-				prop.put("deploy.env", EnvConfigurer.env);
-			}
+			
+			Properties prop = this.getMonitorProperties();
 			Map<String, String> params = new HashMap<String, String>((Map)prop);
 			HttpUtils.post(MONITOR_URL, params);
 			return true;
@@ -92,12 +91,8 @@ public class MonitorContainer implements Container {
 			 * 位于JGroups包里的udp.xml。参数可以是一个以冒号分隔的字符串， 或是一个XML文件，在XML文件里定义协议栈。
 			 */
 			logger.warn("发送监控同步数据通知");
-			
-			Properties prop = SystemPropertiesUtils.getProp();
-			String hostName = NetUtils.getLocalHost();
-			prop.put("node.ip", NetUtils.getIpByHost(hostName));
-			prop.put("node.host", hostName);
-			prop.put("install.path", getInstallPath());
+
+			Properties prop = this.getMonitorProperties();
 			// 创建一个通道
 			JChannel channel = new JChannel();
 			// 加入一个群
@@ -117,17 +112,70 @@ public class MonitorContainer implements Container {
 		}
 	}
 	
+	private Properties getMonitorProperties(){
+		Properties prop = SystemPropertiesUtils.getProp();
+		String hostName = NetUtils.getLocalHost();
+		List<String> runtimeParameters = this.getRuntimeParameters();
+		prop.put("node.ip", NetUtils.getIpByHost(hostName));
+		prop.put("node.host", hostName);
+		prop.put("install.path", getInstallPath());
+		prop.put("deploy.env", getDeployEnv());
+		prop.put("log.level", Log4jUtils.getRootLoggerLevel().toString());
+		prop.put("java.version", System.getProperty("java.version"));
+		prop.put("start.param", runtimeParameters.toString());
+		prop.put("mem.max", this.getRuntimeParameter(runtimeParameters, "-Xmx"));
+		prop.put("mem.min", this.getRuntimeParameter(runtimeParameters, "-Xms"));
+		return prop;
+	}
+	
 	private String getInstallPath() {
-		URL url = Thread.currentThread().getContextClassLoader().getResource("");
-		String path = url.getPath();
-		int indexConf = path.lastIndexOf("/conf");
-		String installPath = path.substring(0, indexConf);
-		logger.info(installPath);
-		return installPath;
+		return System.getProperty("user.dir");
+	}
+	
+	private String getDeployEnv() {
+		String env = System.getProperty(Constants.KEY_DEPLOY_ENV);
+		if (null == env) {
+			env = System.getProperty(Constants.KEY_ENV);
+			if (null == env) {
+				env = EnvConfigurer.env;
+				if (null == env) {
+					env = SystemPropertiesUtils.getString(Constants.KEY_DEPLOY_ENV);
+					if (null == env) {
+						env = "UNKNOWN";
+					}
+				}
+			}
+		}
+		return env;
 	}
 
 	public long getStartTime() {
 		return startTime;
 	}
-
+	
+	private List<String> getRuntimeParameters() {
+		RuntimeMXBean bean = ManagementFactory.getRuntimeMXBean();
+		List<String> rList = new ArrayList<String>();
+		List<String> aList = bean.getInputArguments();
+		for (String key : aList) {
+			if(key.indexOf("-X") > -1) {
+				if(key.indexOf("bootclasspath") == -1) {
+					rList.add(key);
+				}
+			}
+		}
+		return rList;
+	}
+	
+	//解析启动参数JMX_MEM="-server -Xmx4g -Xms2g -Xmn512m -XX:PermSize=128m -Xss256k"
+	private String getRuntimeParameter(List<String> runtimeParameters, String parameter) {
+		String value = "UNKNOWN";
+		for (String key : runtimeParameters) {
+			if(key.indexOf(parameter) > -1) {
+				value = key.substring(parameter.length());
+			}
+		}
+		return value;
+	}
+	
 }

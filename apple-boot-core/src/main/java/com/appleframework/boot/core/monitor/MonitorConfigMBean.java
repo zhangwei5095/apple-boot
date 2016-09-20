@@ -18,6 +18,10 @@ public interface MonitorConfigMBean {
 
 	public String getInstallPath();
 	
-	public String getProtocolName();
+	public String getStartParam();
 	
+	public String getMemMax();
+	
+	public String getMemMin();
+		
 }

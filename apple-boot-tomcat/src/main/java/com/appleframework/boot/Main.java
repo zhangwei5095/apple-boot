@@ -12,6 +12,7 @@ import javax.management.ObjectName;
 
 import org.apache.log4j.Logger;
 
+import com.appleframework.boot.core.CommandOption;
 import com.appleframework.boot.core.Container;
 import com.appleframework.boot.core.log4j.Log4jContainer;
 import com.appleframework.boot.core.log4j.LoggingConfig;
@@ -19,7 +20,6 @@ import com.appleframework.boot.core.monitor.MonitorConfig;
 import com.appleframework.boot.core.monitor.MonitorContainer;
 import com.appleframework.boot.tomcat.spring.SpringContainer;
 import com.appleframework.boot.tomcat.spring.SpringContainerManager;
-import com.appleframework.config.core.EnvConfigurer;
 
 /**
  * spring+Jetty的容器
@@ -36,24 +36,16 @@ public class Main {
 
 	public static void main(String[] args) {
 		try {
-			for (int i = 0; i < args.length; i++) {
-				String envArgs = args[i];
-				if (envArgs.indexOf("env=") > -1) {
-					String[] envs = envArgs.split("=");
-					EnvConfigurer.env = envs[1];
-					logger.warn("配置项：env=" + EnvConfigurer.env);
-				}
-			}
+			Version.logVersion();
+			//处理启动参数
+			CommandOption.parser(args);
 
 			MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
 
 			final List<Container> containers = new ArrayList<Container>();
-			Container springContainer = new SpringContainer();
-			Container log4jContainer = new Log4jContainer();
-            Container monitorContainer = new MonitorContainer();
-            containers.add(log4jContainer);
-            containers.add(monitorContainer);
-            containers.add(springContainer);
+            containers.add(new MonitorContainer());
+            containers.add(new Log4jContainer());
+            containers.add(new SpringContainer());
 
 			if ("true".equals(System.getProperty(SHUTDOWN_HOOK_KEY))) {
 				Runtime.getRuntime().addShutdownHook(new Thread() {
@@ -83,30 +75,28 @@ public class Main {
 					properties.put(Container.ID_KEY, container.getType());
 					
 					ObjectName oname = ObjectName.getInstance("com.appleframework", properties);
+					Object mbean = null;
 					if(container instanceof SpringContainer) {
-						SpringContainerManager mbean = new SpringContainerManager();
-
-						if (mbs.isRegistered(oname)) {
-							mbs.unregisterMBean(oname);
-						}
-						mbs.registerMBean(mbean, oname);
+						mbean = new SpringContainerManager();
 					}
 					else if(container instanceof Log4jContainer) {
-						LoggingConfig mbean = new LoggingConfig();
-
-						if (mbs.isRegistered(oname)) {
-							mbs.unregisterMBean(oname);
-						}
-						mbs.registerMBean(mbean, oname);
+						mbean = new LoggingConfig();
 					}
 					else if(container instanceof MonitorContainer) {
-						MonitorConfig mbean = new MonitorConfig();
-
-						if (mbs.isRegistered(oname)) {
-							mbs.unregisterMBean(oname);
-						}
-						mbs.registerMBean(mbean, oname);
+						mbean = new MonitorConfig();
 					}
+					else {
+						mbean = null;
+					}
+					
+					if(null == mbean)
+						continue;
+					
+					if (mbs.isRegistered(oname)) {
+						mbs.unregisterMBean(oname);
+					}
+					mbs.registerMBean(mbean, oname);
+
 				} catch (Exception e) {
 					logger.error("注册JMX服务出错：" + e.getMessage(), e);
 				}

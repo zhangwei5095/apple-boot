@@ -32,7 +32,7 @@ public class SpringContainer implements Container {
         try {
         	EmbeddedTomcat server = context.getBean("tomcatServer", EmbeddedTomcat.class);
         	logger.warn("Start tomcat web context context= " + server.getContextPath() 
-              		+ ";webapp path=" + server.getWebAppPath());
+              		+ ";webapp path=" + server.getWebAppPath());        	
             server.startTomcat();
             logger.warn("启动成功");
         } catch (Exception e) {
